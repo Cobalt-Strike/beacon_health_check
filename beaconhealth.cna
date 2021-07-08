@@ -1,0 +1,190 @@
+# beaconhealth.cna
+# Joe Vest 
+# Twitter: @jovest
+# Description: This aggressor script adds tracking of a beacon's healthe by tracking sleep and jitter times to calculate a status based on an expected checkin time.
+
+# symbol marks beacon as active and working
+# Calculated as last checkin is less than sleep + (sleep * jitter). This is considerd the expected return time
+# (i.e., "sleep 10 1" would have a max expected time of 10 + (10 * .01 * 1) or 11). Anything below this value is considered good
+$good = "☑"; 
+
+# symbol marks beacon has died
+# Calculated as last checkin time is greater then expected return * 2
+$bad = "💀"; 
+
+# symbol marks beacon has been killed by an operator
+# If beacon['alive'] is false, then an opertor killed this beacon and the beacon acknowleded this command
+$dead = "❎"; 
+
+# symbol marks beacon as dying
+# Calculated as last checkin is greater than the expected return time and less than the bad time. 
+$dying = "⚠"; 
+
+# symbol marks the beacon as paused. This is a linked beacon that has been disconnected but still considered alive. These beacons depend on a parent for communication. There is no great way to track disconnected beacons.
+$pause = '⏸';
+
+local('$profile $initialsleep $initialjitter %beaconsleeps');
+# $profile, contents of c2 profile
+# $initialsleep, value of sleep in profile
+# $initialjitter, value of jitter in profile
+# %beaconsleeps, tracks beacon sleep times
+
+sub health_check {
+    local ('$beaconid $beaconpbid $beaconsleep $beaconjitter $cautiontime $deadtime')
+    foreach $beacon (beacons()) {
+        $beaconid = $beacon['id'];
+        $beaconpbid = $beacon['pbid'];
+
+        # Is this beacon tracked?
+        # if beaconid is in beaconsleep then continue
+        # else run set_initial_sleep on this beacon and continue
+         if ($beaconpbid) {
+            # This is a linked beacon, No need to track.
+        } else if ($beaconid in %beaconsleeps) { 
+            # Skip, this beacon is being tracked
+        } else {
+            println("[!] BeaconHealthCheck, " . $beaconid . " is not being tracked. Tracking based on c2 profile settings.");
+            set_initial_sleep($beaconid);
+        }
+
+        # Calculate times based on tracked sleep and last checkin time
+
+        $beaconsleep = %beaconsleeps[$beaconid][0];
+        $beaconjitter = %beaconsleeps[$beaconid][1];
+        $cautiontime = int($beaconsleep) * 0.01 * int($beaconjitter) + int($beaconsleep);
+        $deadtime = $cautiontime * 2;
+
+        # println("Last checkin: " . $beacon['last']);
+        # println("Sleep Time: " . $beaconsleep); 
+        # println("Jitter: " . $beaconjitter);
+        # println("Cautiontime: " . $cautiontime); # sleep + sleep * 0.01 * jitter
+        # println("Deadtime: " . $deadtime); 
+
+        # Remove old symbols from note
+        $newnote = replace($beacon['note'],'☑|❎|💀|⚠|⏸',"");
+
+        # Update beacon health with current symbol
+        if ($beacon['alive'] eq 'false') { # Is beacon alive?
+            bnote($beacon['id'],$dead . $newnote);
+        } else if (find($beacon['external'],"⚯ ⚯") > 0) { # Is beacon a linked beacon that's disconnected?
+            bnote($beacon['id'],$pause . $newnote);
+        } else if (find($beacon['external'],"⚯⚯") > 0) { # Is beacon a linked beacon that's connected?
+            bnote($beacon['id'],$good . $newnote);
+        } else if ($beacon['last'] < $cautiontime) { # Is last less than caution time? Mark GOOD.
+            bnote($beacon['id'],$good . $newnote);
+        } else if ($beacon['last'] > $deadtime) { # last is greater than deadtime, Mark BAD.
+            bnote($beacon['id'],$bad . $newnote);
+        } else { # Beacon is fading
+            bnote($beacon['id'],$dying . $newnote);
+        }
+	}
+}
+
+# on heartbeat_10s {
+#     println("[*] BeaconHealthCheck, Updating Status every 10s...");
+#     health_check();
+# }
+
+on heartbeat_1m {
+    println("[*] BeaconHealthCheck, Updating Status every 1m...");
+    health_check();
+}
+
+# Update the beacon sleep tracker (%beaconsleeps) with the inital value set in the profile
+sub set_initial_sleep {
+    local('$beaconid');
+
+    $beaconid = $1;
+
+    # Read the intial sleep time set in the c2 profile
+    $profile = data_query("metadata")["c2profile"];
+    $initialsleep = [$profile getString: ".sleeptime"];
+    $initialjitter = [$profile getString: ".jitter"];
+
+    # Update tracker with sleep and jitter
+    track_sleep($beaconid,$initialsleep,$initialjitter);
+
+}
+
+# Update the beacon sleep tracker (%beaconsleeps) when the sleep command is run
+sub track_sleep {
+    local('$beaconid $sleeptime $jitter');
+    $beaconid = $1;
+    $sleeptime = $2;
+    $jitter = $3;
+
+    # Update tracker with sleep and jitter
+    %beaconsleeps[$beaconid] = @($sleeptime,$jitter);
+}
+
+
+on beacon_initial {
+
+    local('$beaconid');
+
+
+    # Mark the beacon a new
+    $beaconid = beacon_info($1,"id");
+
+    if (beacon_info($1,"pbid"))  { # This is a linked beacon, include parent pid
+        bnote($beaconid, "NEW; " . "parent " . beacon_info(beacon_info($1,"pbid"),"pid"));
+    } else {
+        bnote($beaconid, "NEW; ");
+        # Track the initial sleep/jitter of new beacons
+        set_initial_sleep($beaconid);
+    }
+
+
+}
+
+# Use the beacon_input event to determine if the command was a sleep
+# Capture Sleep setting in beaconsleeps 
+# beaconid, sleep, jitter
+on beacon_input {
+
+    # Was the last command a 'sleep' command?
+    local('@result @command $beaconid $sleeptime $jittertime');
+
+    @result = @_;
+
+    # get beacon id
+    $beaconid = @result[0];
+
+    # get beacon parentid
+    $beaconpbid = beacon_info($beaconid,"pbid");
+
+    # get the command to determine if it is 'sleep' and parse out the time and jitter parameters
+    @command = split(" ", @result[2]);
+    $commandsize = size(@command);
+
+    if (@command[0] eq "sleep") { # is this a sleep command?
+
+        if (int($commandsize) == 2 ) { # is this sleep with no jitter?
+
+            if ($beaconpbid) { # Update parent beacon id. Sleeps are submitted to parent beacons.
+                println("[*] BeaconHealthCheck, Sleep command issued child beacon. Updating parent sleep tracking " . $beaconpbid . ": " . @command[0] . " " . @command[1]);
+
+                track_sleep($beaconpbid,int(@command[1]) * 1000,0);
+            } else { # Track sleeps of beacon id
+                println("[*] BeaconHealthCheck, Sleep command issued. tracking sleep for " . $beaconid . ": " . @command[0] . " " . @command[1]);
+                track_sleep($beaconid,int(@command[1]) * 1000,0);
+            }
+
+        } else if (int($commandsize) == 3 ) { # is this sleep with jitter?
+            if ($beaconpbid) { # Update parent beacon id. Sleeps are submitted to parent beacons.
+                println("[*] BeaconHealthCheck, Sleep command issued to chiled beacon. Updating parent sleep tracking " . $beaconpbid . ": " . @command[0] . " " . @command[1] . " " . @command[2]);
+                track_sleep($beaconpbid,int(@command[1]) * 1000,@command[2]);
+            } else {
+                println("[*] BeaconHealthCheck, Sleep command issued. Tracking sleep for " . $beaconid . ": " . @command[0] . " " . @command[1] . " " . @command[2]);
+                track_sleep($beaconid,int(@command[1]) * 1000,@command[2]);
+            }
+
+        }   
+
+    }
+
+}
+
+command get_BeaconHealthCheck_settings {
+    println(%beaconsleeps);
+}
