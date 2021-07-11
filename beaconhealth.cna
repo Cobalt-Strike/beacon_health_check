@@ -3,6 +3,10 @@
 # Twitter: @jovest
 # Description: This aggressor script adds tracking of a beacon's healthe by tracking sleep and jitter times to calculate a status based on an expected checkin time.
 
+
+# Log script start to the console
+println("BeaconHealthCheck: Script loaded");
+
 # symbol marks beacon as active and working
 # Calculated as last checkin is less than sleep + (sleep * jitter). This is considerd the expected return time
 # (i.e., "sleep 10 1" would have a max expected time of 10 + (10 * .01 * 1) or 11). Anything below this value is considered good
@@ -127,9 +131,17 @@ on beacon_initial {
     $beaconid = beacon_info($1,"id");
 
     if (beacon_info($1,"pbid"))  { # This is a linked beacon, include parent pid
-        bnote($beaconid, "NEW; " . "parent " . beacon_info(beacon_info($1,"pbid"),"pid"));
+        # Update beacon note with NEW status
+        bnote($beaconid, "NEW BEACON - " . formatDate("yyyy.MM.dd HH:mm:ss z") . "; " . "Parent " . beacon_info(beacon_info($1,"pbid"),"pid"));
+
+        # Send details to the event log
+        elog("                    \c8BeaconID: " . $1 . " - PID: " . beacon_info($1,"pid"));
+
     } else {
-        bnote($beaconid, "NEW; ");
+        # Update beacon note with NEW status
+        bnote($beaconid, "NEW BEACON - " . formatDate("yyyy.MM.dd HH:mm:ss z") . "; ");
+        elog("                    \c8BeaconID: " . $1 . " - PID: " . beacon_info($1,"pid"));
+        
         # Track the initial sleep/jitter of new beacons
         set_initial_sleep($beaconid);
     }
