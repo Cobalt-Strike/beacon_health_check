@@ -6,11 +6,15 @@ Joe Vest (Twitter: @joevest)
 
 This aggressor script uses a beacon's note field to indicate the health status of a beacon. This is done by ...
 
-- Tracking the each beacon's current sleep/jitter time
-- Calculating health based on a "max expected checkin time"
-- Updating the note field with an approriate icon every minute using the event `heartbeat_1m`
-- Labeling new beacons as "NEW" with the time of arival
-- Adding beacon id and PID to the iniital beacon event log message
+- Tracking each beacon's current sleep/jitter time
+- Calculating health based on a "max expected check in time"
+- Updating the note field with an appropriate icon every minute using the event `heartbeat_1m`
+- Labeling new beacons as "NEW" with the time of arrival
+- Adding beacon id and PID to the initial beacon event log message
+
+## Demo
+
+[Demo on YouTube](https://youtu.be/97mCumYtTo7Y)
 
 ## Heath Checks and Icons
 
