@@ -14,7 +14,7 @@ This aggressor script uses a beacon's note field to indicate the health status o
 
 ## Demo
 
-[Demo on YouTube](https://youtu.be/97mCumYtTo7Y)
+[Demo on YouTube](https://www.youtube.com/watch?v=97mCumYTo7Y)
 
 ## Heath Checks and Icons
 
