@@ -1,6 +1,6 @@
 # beaconhealth.cna
 # Joe Vest 
-# Twitter: @jovest
+# Twitter: @joevest
 # Description: This aggressor script adds tracking of a beacon's healthe by tracking sleep and jitter times to calculate a status based on an expected checkin time.
 
 
